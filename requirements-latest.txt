@@ -1,0 +1,68 @@
+# ============================================================================
+#  Enterprise Knowledge Assistant - dependencies for Python 3.12 / 3.13+
+#
+#  Use this file ONLY if you cannot install Python 3.11.
+#  The exact pins in requirements.txt are the tested, reproducible set.
+#
+#  Compiled packages (FAISS, NumPy, Pillow, tiktoken) use >= lower bounds so
+#  pip selects whatever binary wheel matches your interpreter version.
+#  Pure-Python packages stay exactly pinned.
+#
+#      pip install -r requirements-latest.txt
+# ============================================================================
+
+# ---- Core API (pure Python - safe to pin) ----
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# ---- Frontend ----
+streamlit>=1.41.1
+requests==2.32.3
+
+# ---- Azure AI Foundry ----
+openai>=1.59.6
+azure-ai-documentintelligence>=1.0.0
+azure-identity>=1.19.0
+azure-keyvault-secrets>=4.9.0
+
+# ---- Retrieval ----
+# RELAXED: no cp313 wheel exists for faiss-cpu 1.9.x - this was your error
+faiss-cpu>=1.12.0
+rank-bm25==0.2.2
+# RELAXED: numpy 1.26.4 has no cp313 wheel either; 2.x is required on 3.13+
+numpy>=2.1.0
+
+# ---- Registry ----
+SQLAlchemy>=2.0.36
+
+# ---- Parsing (local fallback backend) ----
+pypdf>=5.1.0
+pdfplumber>=0.11.4
+python-docx==1.1.2
+python-pptx==1.0.2
+openpyxl==3.1.5
+# RELAXED: compiled image library
+Pillow>=11.1.0
+pytesseract==0.3.13
+
+# ---- Tokenisation / chunking ----
+# RELAXED: compiled Rust extension, version-tagged wheels
+tiktoken>=0.8.0
+
+# ---- Observability ----
+python-json-logger>=3.2.1
+tenacity>=9.0.0
+
+# ---- Testing ----
+pytest>=8.3.4
+pytest-cov>=6.0.0
+httpx>=0.28.1
+
+# NOTE: No Docker. Install into a Python virtual environment.
+#
+# NumPy 2.x is not fully backward compatible with 1.x. The chunking and hashing
+# modules do not use NumPy directly, but if you hit a dtype or ABI error in
+# faiss-cpu after installing, fall back to Option A (Python 3.11).

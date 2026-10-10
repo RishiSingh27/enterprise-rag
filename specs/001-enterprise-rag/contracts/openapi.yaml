@@ -1,0 +1,346 @@
+openapi: 3.0.3
+info:
+  title: Enterprise Knowledge Assistant API
+  description: |
+    Contract-first API for the Enterprise RAG application.
+    Authored BEFORE implementation per Constitution Article IV.
+    The Streamlit frontend consumes only these endpoints.
+  version: 1.0.0
+  contact:
+    name: Rishi Singh — Engineer, Cloud & Infra Management
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://rag-api.internal.corp
+    description: Internal production
+
+tags:
+  - name: Ingestion
+  - name: Query
+  - name: Admin
+
+paths:
+  /health:
+    get:
+      tags: [Admin]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string, example: 1.0.0 }
+
+  /ready:
+    get:
+      tags: [Admin]
+      summary: Readiness probe — verifies Azure endpoints, index and registry
+      responses:
+        '200':
+          description: Ready to serve
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ready }
+                  vector_index: { type: boolean }
+                  registry: { type: boolean }
+                  azure_embeddings: { type: boolean }
+                  azure_llm: { type: boolean }
+        '503':
+          description: Not ready
+
+  /api/v1/ingest:
+    post:
+      tags: [Ingestion]
+      summary: Upload and ingest a document
+      description: |
+        Runs the three-tier hash pipeline. A byte-identical re-upload returns
+        `outcome: duplicate` with `embedding_calls: 0` and performs no work.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                force_reindex:
+                  type: boolean
+                  default: false
+                  description: Bypass hash short-circuit and reprocess fully
+      responses:
+        '200':
+          description: Ingestion completed (including the duplicate case)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestionReport' }
+        '400':
+          description: Corrupt, empty or encrypted file
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '415':
+          description: Unsupported file type
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Ingestion failed; no partial state committed
+
+  /api/v1/query:
+    post:
+      tags: [Query]
+      summary: Ask a grounded question against the corpus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QueryRequest' }
+      responses:
+        '200':
+          description: Answer, or an explicit abstention
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueryResponse' }
+        '422':
+          description: Invalid request body
+
+  /api/v1/query/stream:
+    post:
+      tags: [Query]
+      summary: Same as /query but streams the answer as server-sent events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QueryRequest' }
+      responses:
+        '200':
+          description: SSE stream of answer tokens followed by a sources event
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /api/v1/documents:
+    get:
+      tags: [Admin]
+      summary: List indexed documents
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [indexed, failed, rejected, duplicate]
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/DocumentSummary' }
+
+  /api/v1/documents/{doc_id}:
+    get:
+      tags: [Admin]
+      summary: Document detail including per-page change states
+      parameters:
+        - in: path
+          name: doc_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Document detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentDetail' }
+        '404':
+          description: Not found
+    delete:
+      tags: [Admin]
+      summary: Delete a document and prune all of its vectors
+      parameters:
+        - in: path
+          name: doc_id
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Not found
+
+  /api/v1/stats:
+    get:
+      tags: [Admin]
+      summary: Corpus and cost-saving statistics
+      responses:
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents: { type: integer }
+                  pages: { type: integer }
+                  active_chunks: { type: integer }
+                  vectors: { type: integer }
+                  embedding_calls_total: { type: integer }
+                  chunks_reused_total:
+                    type: integer
+                    description: Embedding calls avoided by hashing — the G4 metric
+                  embedding_model: { type: string }
+                  llm_model: { type: string }
+
+components:
+  schemas:
+
+    IngestionReport:
+      type: object
+      required: [run_id, doc_id, outcome]
+      properties:
+        run_id: { type: string }
+        doc_id: { type: string }
+        filename: { type: string }
+        doc_hash: { type: string, description: Tier-1 SHA-256 }
+        outcome:
+          type: string
+          enum: [new, duplicate, updated, failed, rejected]
+        message: { type: string }
+        pages_added: { type: integer }
+        pages_modified: { type: integer }
+        pages_unchanged: { type: integer }
+        pages_removed: { type: integer }
+        changed_page_numbers:
+          type: array
+          items: { type: integer }
+        chunks_created: { type: integer }
+        chunks_reused:
+          type: integer
+          description: Chunks matched by Tier-3 hash; embedding skipped
+        embedding_calls: { type: integer }
+        duration_seconds: { type: number, format: float }
+      example:
+        run_id: 8f1c...
+        doc_id: 3a20...
+        filename: HR_Policy_2026.pdf
+        outcome: updated
+        pages_modified: 2
+        pages_unchanged: 38
+        changed_page_numbers: [7, 8]
+        chunks_created: 5
+        chunks_reused: 3
+        embedding_calls: 5
+        duration_seconds: 6.42
+
+    QueryRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 3
+          maxLength: 2000
+        top_k:
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 20
+        doc_ids:
+          type: array
+          items: { type: string }
+          description: Optional scope restriction
+        trace_id: { type: string }
+
+    QueryResponse:
+      type: object
+      required: [answer, abstained, sources]
+      properties:
+        query_id: { type: string }
+        trace_id: { type: string }
+        answer: { type: string }
+        abstained:
+          type: boolean
+          description: True when the confidence floor was not met (FR-025)
+        top_score: { type: number, format: float }
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/Source' }
+        latency_ms: { type: integer }
+        token_usage:
+          type: object
+          properties:
+            prompt: { type: integer }
+            completion: { type: integer }
+
+    Source:
+      type: object
+      properties:
+        chunk_id: { type: string }
+        document: { type: string }
+        page_number: { type: integer }
+        breadcrumb: { type: string }
+        element_types: { type: string, example: "paragraph,table" }
+        score: { type: number, format: float }
+        snippet: { type: string }
+        image_path:
+          type: string
+          nullable: true
+          description: Present when the cited element is a figure or chart
+
+    DocumentSummary:
+      type: object
+      properties:
+        doc_id: { type: string }
+        filename: { type: string }
+        file_type: { type: string }
+        page_count: { type: integer }
+        chunk_count: { type: integer }
+        status: { type: string }
+        version_no: { type: integer }
+        updated_at: { type: string, format: date-time }
+
+    DocumentDetail:
+      allOf:
+        - $ref: '#/components/schemas/DocumentSummary'
+        - type: object
+          properties:
+            doc_hash: { type: string }
+            pages:
+              type: array
+              items:
+                type: object
+                properties:
+                  page_number: { type: integer }
+                  page_hash: { type: string }
+                  change_state: { type: string }
+                  element_count: { type: integer }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        detail: { type: string }
+        trace_id: { type: string }

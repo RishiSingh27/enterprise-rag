@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enterprise Knowledge Assistant</title>
+<meta name="description" content="Ask questions about your internal documents and get cited, verifiable answers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234F8DF7'/><text y='23' x='16' text-anchor='middle' font-size='18' fill='white' font-family='sans-serif' font-weight='bold'>E</text></svg>">
+</head>
+<body>
+
+<!-- ─────────────────────────  APP SHELL  ───────────────────────── -->
+<div class="app">
+
+  <!-- ══════════  SIDEBAR  ══════════ -->
+  <aside class="sidebar" id="sidebar">
+
+    <div class="brand">
+      <div class="brand__mark">EK</div>
+      <div class="brand__text">
+        <div class="brand__name">Knowledge Assistant</div>
+        <div class="brand__sub">Enterprise RAG</div>
+      </div>
+      <button class="icon-btn sidebar__close" id="sidebarClose" aria-label="Close menu">
+        <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="sidebar__scroll">
+
+      <!-- Theme -->
+      <section class="panel">
+        <h3 class="panel__label">Appearance</h3>
+        <div class="theme-grid" id="themeGrid" role="radiogroup" aria-label="Colour theme">
+          <button class="theme-swatch is-active" data-theme="midnight" role="radio" aria-checked="true" title="Midnight">
+            <span class="theme-swatch__dot" style="--a:#0B1120;--b:#4F8DF7"></span>
+            <span class="theme-swatch__name">Midnight</span>
+          </button>
+          <button class="theme-swatch" data-theme="daylight" role="radio" aria-checked="false" title="Daylight">
+            <span class="theme-swatch__dot" style="--a:#FFFFFF;--b:#2563EB"></span>
+            <span class="theme-swatch__name">Daylight</span>
+          </button>
+          <button class="theme-swatch" data-theme="slate" role="radio" aria-checked="false" title="Slate">
+            <span class="theme-swatch__dot" style="--a:#14161A;--b:#8B93A7"></span>
+            <span class="theme-swatch__name">Slate</span>
+          </button>
+          <button class="theme-swatch" data-theme="azure" role="radio" aria-checked="false" title="Azure">
+            <span class="theme-swatch__dot" style="--a:#F4F7FB;--b:#0078D4"></span>
+            <span class="theme-swatch__name">Azure</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Status -->
+      <section class="panel">
+        <h3 class="panel__label">System status</h3>
+        <div class="status" id="status">
+          <span class="status__dot is-pending"></span>
+          <span class="status__text">Checking…</span>
+        </div>
+        <div class="status__detail" id="statusDetail" hidden></div>
+      </section>
+
+      <!-- Stats -->
+      <section class="panel">
+        <h3 class="panel__label">Knowledge base</h3>
+        <div class="tiles" id="tiles">
+          <div class="tile"><div class="tile__val" data-stat="documents">–</div><div class="tile__lab">Documents</div></div>
+          <div class="tile"><div class="tile__val" data-stat="pages">–</div><div class="tile__lab">Pages</div></div>
+          <div class="tile"><div class="tile__val" data-stat="active_chunks">–</div><div class="tile__lab">Chunks</div></div>
+          <div class="tile tile--accent">
+            <div class="tile__val" data-stat="chunks_reused_total">–</div>
+            <div class="tile__lab">Embeds saved
+              <span class="info" tabindex="0" data-tip="Embedding calls avoided by three-tier content hashing.">?</span>
+            </div>
+          </div>
+        </div>
+        <div class="models">
+          <div class="models__row"><span>Generation</span><code data-stat="llm_model">–</code></div>
+          <div class="models__row"><span>Embeddings</span><code data-stat="embedding_model">–</code></div>
+          <div class="models__row"><span>Vectors</span><code data-stat="vectors">–</code></div>
+        </div>
+      </section>
+
+      <!-- Upload -->
+      <section class="panel">
+        <h3 class="panel__label">Add documents</h3>
+        <div class="drop" id="dropzone" tabindex="0" role="button" aria-label="Upload documents">
+          <svg class="drop__icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          <p class="drop__title">Drop files or <span>browse</span></p>
+          <p class="drop__hint">PDF · DOCX · PPTX · XLSX · TXT · MD · PNG · JPG</p>
+          <input type="file" id="fileInput" multiple hidden
+                 accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.png,.jpg,.jpeg">
+        </div>
+        <ul class="queue" id="queue"></ul>
+        <button class="btn btn--primary" id="ingestBtn" hidden>
+          <span class="btn__label">Ingest files</span>
+        </button>
+        <div class="reports" id="reports"></div>
+      </section>
+
+      <!-- Retrieval -->
+      <section class="panel">
+        <h3 class="panel__label">Retrieval</h3>
+        <div class="slider">
+          <div class="slider__head">
+            <label for="topK">Sources per answer</label>
+            <output id="topKOut">5</output>
+          </div>
+          <input type="range" id="topK" min="1" max="10" value="5">
+        </div>
+      </section>
+
+      <!-- Docs -->
+      <section class="panel">
+        <details class="accordion" id="docsAccordion">
+          <summary class="accordion__head">
+            <span>Indexed documents</span>
+            <svg class="accordion__chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion__body" id="docList"><p class="muted sm">Loading…</p></div>
+        </details>
+      </section>
+
+      <button class="btn btn--ghost" id="clearBtn" hidden>Clear conversation</button>
+    </div>
+  </aside>
+
+  <!-- ══════════  MAIN  ══════════ -->
+  <main class="main">
+
+    <header class="topbar">
+      <button class="icon-btn topbar__menu" id="menuBtn" aria-label="Open menu">
+        <svg viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      </button>
+      <div class="topbar__title">
+        <h1>Enterprise Knowledge Assistant</h1>
+        <p>Answers traced to their source page</p>
+      </div>
+      <div class="topbar__badge" id="topBadge" hidden>
+        <span class="status__dot is-ok"></span><span>Online</span>
+      </div>
+    </header>
+
+    <div class="chat" id="chat">
+      <!-- Empty state -->
+      <div class="empty" id="empty">
+        <div class="empty__orb"><span></span><span></span><span></span></div>
+        <h2>Ask your first question</h2>
+        <p>Every answer is generated only from documents you have indexed — with document and page citations.</p>
+        <div class="chips" id="chips">
+          <button class="chip">What is the per diem limit for a Tier-1 city?</button>
+          <button class="chip">How many leave days can I carry forward?</button>
+          <button class="chip">Summarise the reimbursement policy</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <form class="composer__form" id="form" autocomplete="off">
+        <textarea id="input" rows="1" placeholder="Ask a question about your documents…" aria-label="Your question"></textarea>
+        <button type="submit" class="send" id="send" aria-label="Send">
+          <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </form>
+      <p class="composer__hint">Press <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</p>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- Lightbox for figures -->
+<div class="lightbox" id="lightbox" hidden>
+  <button class="icon-btn lightbox__close" id="lightboxClose" aria-label="Close">
+    <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+  </button>
+  <img id="lightboxImg" alt="Source figure">
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
